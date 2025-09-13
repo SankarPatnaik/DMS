@@ -1,4 +1,6 @@
-import os, io, hashlib, boto3
+import os, io, hashlib, boto3, logging, botocore
+
+logger = logging.getLogger(__name__)
 
 def sha256_fileobj(fileobj: io.BytesIO) -> str:
     pos = fileobj.tell()
@@ -29,5 +31,12 @@ class S3Client:
         try:
             self.client.head_bucket(Bucket=self.bucket)
             return True
+        except botocore.exceptions.ClientError as e:
+            error_code = e.response.get("Error", {}).get("Code")
+            if error_code == "404":
+                return False
+            logger.exception("Unexpected ClientError when checking bucket existence")
+            raise
         except Exception:
-            return False
+            logger.exception("Unexpected error when checking bucket existence")
+            raise
