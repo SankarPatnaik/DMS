@@ -1,0 +1,36 @@
+{
+  "mappings": {
+    "properties": {
+      "document_id": {
+        "type": "keyword"
+      },
+      "title": {
+        "type": "text",
+        "fields": {
+          "kw": {
+            "type": "keyword"
+          }
+        }
+      },
+      "content": {
+        "type": "text"
+      },
+      "tags": {
+        "type": "keyword"
+      },
+      "classification": {
+        "type": "keyword"
+      },
+      "metadata": {
+        "type": "object",
+        "enabled": true
+      },
+      "created_at": {
+        "type": "date"
+      },
+      "updated_at": {
+        "type": "date"
+      }
+    }
+  }
+}
