@@ -9,3 +9,5 @@ boto3==1.35.20
 python-multipart==0.0.9
 ruff==0.6.8
 pytest==8.3.2
+
+moto[s3]==5.0.4
