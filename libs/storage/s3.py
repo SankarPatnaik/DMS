@@ -1,12 +1,27 @@
 import os, io, hashlib, boto3
+from typing import Iterable, Union, BinaryIO
 
-def sha256_fileobj(fileobj: io.BytesIO) -> str:
-    pos = fileobj.tell()
-    fileobj.seek(0)
+def sha256_fileobj(fileobj: Union[BinaryIO, Iterable[bytes]]) -> str:
+    """Calculate SHA256 checksum of a file-like object or byte iterator.
+
+    The input may be any object with a ``read`` method (e.g. a file object)
+    or an iterable yielding ``bytes`` chunks.
+    The file object's current position is preserved.
+    """
     d = hashlib.sha256()
-    for chunk in iter(lambda: fileobj.read(8192), b""):
-        d.update(chunk)
-    fileobj.seek(pos)
+
+    if hasattr(fileobj, "read"):
+        pos = fileobj.tell()
+        if hasattr(fileobj, "seek"):
+            fileobj.seek(0)
+        for chunk in iter(lambda: fileobj.read(8192), b""):
+            d.update(chunk)
+        if hasattr(fileobj, "seek"):
+            fileobj.seek(pos)
+    else:
+        for chunk in fileobj:
+            d.update(chunk)
+
     return d.hexdigest()
 
 class S3Client:
@@ -21,9 +36,29 @@ class S3Client:
             aws_secret_access_key=self.secret
         )
 
-    def put_bytes(self, key: str, data: bytes, content_type: str = "application/octet-stream"):
+    def put_bytes(
+        self,
+        key: str,
+        data: Union[bytes, BinaryIO, Iterable[bytes]],
+        content_type: str = "application/octet-stream",
+    ):
+        """Upload data to S3.
+
+        ``data`` may be raw bytes, a file-like object, or an iterator yielding
+        byte chunks.
+        """
+
         self.client.create_bucket(Bucket=self.bucket) if not self._bucket_exists() else None
-        self.client.put_object(Bucket=self.bucket, Key=key, Body=data, ContentType=content_type)
+
+        body: Union[bytes, BinaryIO]
+        if isinstance(data, (bytes, bytearray)):
+            body = data
+        elif hasattr(data, "read"):
+            body = data  # type: ignore[assignment]
+        else:
+            body = _IteratorStream(iter(data))
+
+        self.client.put_object(Bucket=self.bucket, Key=key, Body=body, ContentType=content_type)
 
     def _bucket_exists(self) -> bool:
         try:
@@ -31,3 +66,16 @@ class S3Client:
             return True
         except Exception:
             return False
+
+
+class _IteratorStream:
+    """Wrap an iterator of bytes to provide a file-like ``read`` method."""
+
+    def __init__(self, iterator: Iterable[bytes]):
+        self._iter = iter(iterator)
+
+    def read(self, *_args):
+        try:
+            return next(self._iter)
+        except StopIteration:
+            return b""

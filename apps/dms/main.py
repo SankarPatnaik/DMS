@@ -1,4 +1,4 @@
-import os, io, uuid, datetime
+import os, uuid
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import create_engine, text
@@ -21,15 +21,17 @@ def health():
 @app.post("/docs")
 async def upload_doc(file: UploadFile = File(...), title: str = Form(None)):
     try:
-        content = await file.read()
-        fileobj = io.BytesIO(content)
+        fileobj = file.file
         checksum = sha256_fileobj(fileobj)
+        fileobj.seek(0, os.SEEK_END)
+        size = fileobj.tell()
+        fileobj.seek(0)
         doc_id = str(uuid.uuid4())
         version_id = str(uuid.uuid4())
         version_no = 1
         storage_key = f"docs/{doc_id}/v{version_no}/{file.filename}"
         s3 = S3Client()
-        s3.put_bytes(storage_key, content, content_type=file.content_type or "application/octet-stream")
+        s3.put_bytes(storage_key, fileobj, content_type=file.content_type or "application/octet-stream")
 
         with engine.begin() as conn:
             conn.execute(text("""
@@ -37,7 +39,7 @@ async def upload_doc(file: UploadFile = File(...), title: str = Form(None)):
                     classification, tags, metadata, created_by, current_version_id)
                 VALUES (:id, :title, NULL, :storage_key, :size, :checksum, :mime, 'internal', '{}', '{}', 'system', :ver_id)
             """), dict(id=doc_id, title=title or file.filename, storage_key=storage_key,
-                         size=len(content), checksum=checksum, mime=file.content_type or "application/octet-stream", ver_id=version_id))
+                         size=size, checksum=checksum, mime=file.content_type or "application/octet-stream", ver_id=version_id))
 
             conn.execute(text("""
                 INSERT INTO document_versions (id, document_id, version_no, storage_key, checksum, created_by)
